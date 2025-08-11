@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Counting Lock — Light Theme</title>
+<style>
+  :root{
+    --bg:#f7f9fb; 
+    --panel:#ffffff; 
+    --ink:#222; 
+    --muted:#555; 
+    --ring:#0077cc; 
+    --border:#ccd4dd;
+    --btn-bg:#f0f4f8;
+    --btn-border:#b8c2cc;
+  }
+  *{box-sizing:border-box} html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .app{
+    background:var(--panel); border:1px solid var(--border); border-radius:16px;
+    padding:18px; width:min(560px,100%);
+    box-shadow:0 4px 18px rgba(0,0,0,.1);
+  }
+  .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+  label{color:var(--muted)}
+  select,input{
+    background:var(--btn-bg); color:var(--ink);
+    border:1px solid var(--btn-border); border-radius:8px; padding:8px 10px; font-size:1rem;
+  }
+  select:focus,input:focus,.btn:focus,.wheel:focus{
+    outline:none; border-color:var(--ring); box-shadow:0 0 0 3px rgba(0,119,204,.25);
+  }
+  .lock{display:grid; gap:10px; margin-top:14px}
+  .wheel{
+    display:flex; align-items:center; justify-content:center;
+    background:var(--btn-bg); border:1px solid var(--btn-border); border-radius:10px;
+    min-height:72px; min-width:64px; padding:14px 8px; cursor:pointer; user-select:none;
+    font-size:clamp(26px, 6vw, 36px);
+    font-variant-numeric:tabular-nums; letter-spacing:.02em; color:var(--ink);
+  }
+  .controls{display:flex; gap:10px; margin-top:14px; flex-wrap:wrap}
+  .btn{
+    background:var(--btn-bg); border:1px solid var(--btn-border); color:var(--ink);
+    padding:9px 12px; border-radius:8px; cursor:pointer; font-size:1rem;
+  }
+  .btn.toggle[aria-pressed="true"]{ border-color:var(--ring); background:#e6f2fa }
+  @media (prefers-reduced-motion:no-preference){
+    .wheel.anim{ transition: transform .08s ease; }
+    .wheel.bump{ transform: translateY(-2px); }
+  }
+</style>
+</head>
+<body>
+<main class="app" aria-label="Counting lock">
+  <div class="row" role="group" aria-label="Settings">
+    <label for="mode">Base:</label>
+    <select id="mode" aria-label="Choose number system">
+      <option value="dec">Decimal</option>
+      <option value="bin">Binary</option>
+      <option value="hex">Hexadecimal</option>
+    </select>
+    <label for="digits">Wheels:</label>
+    <input id="digits" type="number" min="1" max="8" value="4" aria-label="Number of wheels" />
+  </div>
+
+  <section id="lock" class="lock" role="group" aria-label="Combination lock"></section>
+
+  <div class="controls" role="group" aria-label="Controls">
+    <button id="btnInc" class="btn" aria-label="Increment value by one">Increment</button>
+    <button id="btnReset" class="btn" aria-label="Reset to zero">Reset</button>
+    <button id="btnAuto" class="btn toggle" aria-pressed="false" aria-label="Toggle auto-play">Auto-Play</button>
+  </div>
+</main>
+
+<script>
+const BASES = {
+  dec: { base: 10, symbols: [..."0123456789"] },
+  bin: { base:  2, symbols: [..."01"] },
+  hex: { base: 16, symbols: [..."0123456789ABCDEF"] }
+};
+let mode = "dec", digits = 4, value = 0, autoplayId = null, focusedIndex = 0;
+const $mode=document.getElementById("mode"), $digits=document.getElementById("digits"),
+      $lock=document.getElementById("lock"), $btnInc=document.getElementById("btnInc"),
+      $btnReset=document.getElementById("btnReset"), $btnAuto=document.getElementById("btnAuto");
+
+function digitsFromValue(v, base, pad){
+  const out = new Array(pad).fill(0);
+  for (let i = pad - 1; i >= 0; i--) { out[i] = v % base; v = Math.floor(v / base); }
+  return out;
+}
+function valueFromDigits(digs, base){ return digs.reduce((a,d)=>a*base+d,0); }
+function increment(v, base, pad, delta=1){
+  const mod = base ** pad;
+  return ((v + delta) % mod + mod) % mod;
+}
+function stepWheel(index, dir){
+  const { base } = BASES[mode];
+  const digs = digitsFromValue(value, base, digits);
+  digs[index] = ((digs[index] + dir) % base + base) % base;
+  value = valueFromDigits(digs, base);
+  updateWheel(index, digs[index]);
+  bump(index);
+}
+function setWheel(index, digitVal){
+  const { base } = BASES[mode];
+  const digs = digitsFromValue(value, base, digits);
+  digs[index] = Math.max(0, Math.min(base-1, digitVal));
+  value = valueFromDigits(digs, base);
+  updateWheel(index, digs[index]);
+  bump(index);
+}
+function renderAllWheels(){
+  $lock.innerHTML = "";
+  $lock.style.gridTemplateColumns = `repeat(${digits}, 1fr)`;
+  const { symbols, base } = BASES[mode];
+  const digs = digitsFromValue(value, base, digits);
+  for (let i = 0; i < digits; i++){
+    const btn = document.createElement("button");
+    btn.className = "wheel anim"; btn.type = "button"; btn.dataset.index = String(i);
+    btn.textContent = symbols[digs[i]];
+    btn.addEventListener("click", e => { stepWheel(i, e.shiftKey ? -1 : +1); btn.focus(); focusedIndex = i; });
+    btn.addEventListener("keydown", e => {
+      if (e.key === "ArrowUp") { e.preventDefault(); stepWheel(i, +1); }
+      else if (e.key === "ArrowDown") { e.preventDefault(); stepWheel(i, -1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); focusWheel(Math.max(0, i-1)); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); focusWheel(Math.min(digits-1, i+1)); }
+      else {
+        const ch = e.key.toUpperCase(), pos = symbols.indexOf(ch);
+        if (pos >= 0) { e.preventDefault(); setWheel(i, pos); }
+      }
+    });
+    $lock.appendChild(btn);
+  }
+  focusWheel(Math.min(focusedIndex, digits-1));
+}
+function updateWheel(index, digitVal){
+  const { symbols } = BASES[mode];
+  const btn = $lock.querySelector(`.wheel:nth-child(${index+1})`);
+  if (btn) btn.textContent = symbols[digitVal];
+}
+function bump(index){
+  const btn = $lock.querySelector(`.wheel:nth-child(${index+1})`);
+  if (!btn) return;
+  btn.classList.remove("bump");
+  void btn.offsetWidth;
+  btn.classList.add("bump");
+}
+function focusWheel(i){
+  const btn = $lock.querySelector(`.wheel:nth-child(${i+1})`);
+  if (btn) { btn.focus(); focusedIndex = i; }
+}
+$mode.addEventListener("change", () => { mode = $mode.value; renderAllWheels(); });
+$digits.addEventListener("change", () => {
+  digits = Math.max(1, Math.min(8, parseInt($digits.value||"4",10)));
+  const { base } = BASES[mode];
+  value = Math.min(value, base**digits - 1);
+  renderAllWheels();
+});
+$btnInc.addEventListener("click", () => {
+  const { base } = BASES[mode];
+  value = increment(value, base, digits, +1);
+  renderAllWheels();
+});
+$btnReset.addEventListener("click", () => { value = 0; renderAllWheels(); });
+$btnAuto.addEventListener("click", () => {
+  if (autoplayId){
+    clearInterval(autoplayId); autoplayId = null; $btnAuto.setAttribute("aria-pressed","false");
+  } else {
+    const { base } = BASES[mode];
+    autoplayId = setInterval(() => { value = increment(value, base, digits, +1); renderAllWheels(); }, 125);
+    $btnAuto.setAttribute("aria-pressed","true");
+  }
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && autoplayId){
+    clearInterval(autoplayId); autoplayId = null; $btnAuto.setAttribute("aria-pressed","false");
+  }
+});
+document.addEventListener("keydown", e => {
+  if (e.target === $digits) return;
+  if (e.code === "Space") { e.preventDefault(); $btnInc.click(); }
+  else if (e.key.toLowerCase() === "r") { e.preventDefault(); $btnReset.click(); }
+  else if (e.key.toLowerCase() === "a") { e.preventDefault(); $btnAuto.click(); }
+});
+renderAllWheels();
+</script>
+</body>
+</html>
