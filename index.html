@@ -172,7 +172,7 @@ $btnAuto.addEventListener("click", () => {
     clearInterval(autoplayId); autoplayId = null; $btnAuto.setAttribute("aria-pressed","false");
   } else {
     const { base } = BASES[mode];
-    autoplayId = setInterval(() => { value = increment(value, base, digits, +1); renderAllWheels(); }, 125);
+    autoplayId = setInterval(() => { value = increment(value, base, digits, +1); renderAllWheels(); }, 500);
     $btnAuto.setAttribute("aria-pressed","true");
   }
 });
