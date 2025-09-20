@@ -88,6 +88,30 @@ const $mode=document.getElementById("mode"), $digits=document.getElementById("di
       $lock=document.getElementById("lock"), $btnInc=document.getElementById("btnInc"),
       $btnReset=document.getElementById("btnReset"), $btnAuto=document.getElementById("btnAuto");
 
+function randomNumber(a, b){
+    // simple function to return random integer between a, b
+    return Math.floor(Math.random()*(b-a + 1)) + a;
+}
+
+function selectRandomPin(mode, digits) {
+    // use base and mode to generate a random pin that is possible in current mode
+    let base = BASES[mode].base;
+    let min = base ** (digits - 1);
+    let max = base ** digits - 1;
+    let pin = randomNumber(min, max);
+
+    console.log(pin);
+    return pin;
+}
+
+let Pin = selectRandomPin(mode, digits); // make an initial pin
+
+function checkPin(pin, value){
+    if (pin === value){
+        alert("You guessed the pin: "+pin);
+        Pin = selectRandomPin(mode, digits); // make a new pin
+    }
+}
 function digitsFromValue(v, base, pad){
   const out = new Array(pad).fill(0);
   for (let i = pad - 1; i >= 0; i--) { out[i] = v % base; v = Math.floor(v / base); }
@@ -142,6 +166,8 @@ function updateWheel(index, digitVal){
   const { symbols } = BASES[mode];
   const btn = $lock.querySelector(`.wheel:nth-child(${index+1})`);
   if (btn) btn.textContent = symbols[digitVal];
+  checkPin(Pin, value);
+
 }
 function bump(index){
   const btn = $lock.querySelector(`.wheel:nth-child(${index+1})`);
@@ -149,30 +175,48 @@ function bump(index){
   btn.classList.remove("bump");
   void btn.offsetWidth;
   btn.classList.add("bump");
+
 }
 function focusWheel(i){
   const btn = $lock.querySelector(`.wheel:nth-child(${i+1})`);
   if (btn) { btn.focus(); focusedIndex = i; }
 }
-$mode.addEventListener("change", () => { mode = $mode.value; renderAllWheels(); });
+
+$mode.addEventListener("change", () => {
+    mode = $mode.value;
+
+    Pin = selectRandomPin(mode, digits); // make a new pin for the new base and digits
+
+    renderAllWheels();
+});
 $digits.addEventListener("change", () => {
   digits = Math.max(1, Math.min(8, parseInt($digits.value||"4",10)));
   const { base } = BASES[mode];
   value = Math.min(value, base**digits - 1);
+
+  Pin = selectRandomPin(mode, digits); // make a new pin for the new base and digits
+
   renderAllWheels();
 });
 $btnInc.addEventListener("click", () => {
   const { base } = BASES[mode];
   value = increment(value, base, digits, +1);
+
+  Pin = selectRandomPin(mode, digits); // make a new pin for the new base and digits
+
   renderAllWheels();
 });
-$btnReset.addEventListener("click", () => { value = 0; renderAllWheels(); });
+$btnReset.addEventListener("click", () => {
+    value = 0;
+    renderAllWheels();
+});
 $btnAuto.addEventListener("click", () => {
   if (autoplayId){
     clearInterval(autoplayId); autoplayId = null; $btnAuto.setAttribute("aria-pressed","false");
   } else {
     const { base } = BASES[mode];
     autoplayId = setInterval(() => { value = increment(value, base, digits, +1); renderAllWheels(); }, 500);
+    // add checkPin(Pin, value); for autoplayId
     $btnAuto.setAttribute("aria-pressed","true");
   }
 });
